@@ -102,9 +102,65 @@ const messageIcon = document.getElementById('message-icon');
 const btnMessageConfirm = document.getElementById('btn-message-confirm');
 const btnMessageCancel = document.getElementById('btn-message-cancel');
 
+const selectFiltroPais = document.getElementById('filtro-pais');
+
+// Mapeamento de códigos para nomes em Português
+const nomesPaisesAmigaveis = {
+    "US": "Estados Unidos", "BR": "Brasil", "FR": "França", "GB": "Reino Unido",
+    "IT": "Itália", "JP": "Japão", "DE": "Alemanha", "ES": "Espanha",
+    "AR": "Argentina", "MX": "México", "KR": "Coreia do Sul", "CA": "Canadá",
+    "PT": "Portugal", "IN": "Índia", "CN": "China", "AU": "Austrália", "BE":"Bélgica",
+    "AT":"Austria", "BA":"Bósnia e Herzegovina", "BW": "Botsuana", "CO":"Colombia",
+    "CU":"Cuba", "CZ":"República Tcheca", "DK":"Dinamarca","EG":"Egito","GI":"Gibraltar",
+    "GR":"Grécia", "HK":"Hong Kong","HU":"Hungria","IE":"Irlanda","IL":"Israel","IR":"Irã",
+    "IS":"Islândia", "JO":"Jordânia","MN":"Mogol","NI":"Nicarágua","NL":"Países Baixos",
+    "NO":"Noruega", "NZ":"Nova Zelândia","PH":"Filipinas","PL":"Polônia","PR":"Porto Rico",
+    "RO":"Romênia","RU":"Russia","SE":"Suécia","TH":"Tailândia","TR":"Turquia","TW":"Tailândia",
+    "UY":"Uruguai","YU":"Iugoslávia","ZA":"África do Sul",
+};
+
 const debouncedCarregarFilmes = debounce(carregarFilmes, 500);
 const debouncedBuscarFilmePorId = debounce(buscarFilmePorId, 800);
 const debouncedBuscarFilmePorTitulo = debounce(buscarFilmePorTitulo, 800);
+
+async function popularFiltroPaises() {
+    try {
+        // Busca os países distintos diretamente da sua tabela de cartazes
+        const { data, error } = await supabaseClient
+            .from(SUPABASE_TABLE)
+            .select('pais')
+            .not('pais', 'is', null);
+
+        if (error) throw error;
+
+        // Extrai códigos únicos, remove nulos e ordena alfabeticamente
+        const codigosUnicos = [...new Set(data.map(item => item.pais?.toUpperCase()))]
+            .filter(c => c)
+            .sort();
+
+        const selectFiltroPais = document.getElementById('filtro-pais');
+        if (!selectFiltroPais) return;
+
+        // Limpa opções existentes (exceto a primeira "Todos")
+        selectFiltroPais.innerHTML = '<option value="">Todos os Países</option>';
+
+        codigosUnicos.forEach(codigo => {
+            const option = document.createElement('option');
+            option.value = codigo;
+
+            // Gera o emoji da bandeira
+            const emoji = codigo.replace(/./g, char =>
+                String.fromCodePoint(char.charCodeAt(0) + 127397)
+            );
+
+            const nomeExibicao = nomesPaisesAmigaveis[codigo] || codigo;
+            option.textContent = `${emoji} ${nomeExibicao}`;
+            selectFiltroPais.appendChild(option);
+        });
+    } catch (err) {
+        console.error("Erro ao carregar lista de países:", err);
+    }
+}
 
 // --- FUNÇÕES DE PERSISTÊNCIA (SUPABASE) ---
 async function carregarFilmes(resetPagina = false) {
@@ -121,12 +177,17 @@ async function carregarFilmes(resetPagina = false) {
     const inicio = (paginaAtual - 1) * FILMES_POR_PAGINA;
     const fim = inicio + FILMES_POR_PAGINA - 1;
     const filtroCor = selectFiltroCores.value;
+    const filtroPais = selectFiltroPais.value;
 
     let query = supabaseClient.from(SUPABASE_TABLE).select('*', {count: 'exact'});
 
     // 1. FILTRO DE COR (se for selecionado)
     if (filtroCor && filtroCor.length > 0) {
         query = query.eq('cores', filtroCor);
+    }
+
+    if (filtroPais) {
+        query = query.eq('pais', filtroPais);
     }
 
     // 2. BUSCA UNIFICADA POR TÍTULO E ANO
@@ -739,8 +800,8 @@ async function buscarFilmePorId(tmdbId) {
 
         const data = await response.json();
 
-        paisDetectado = data.production_countries && data.production_countries.length > 0
-            ? data.production_countries[0].iso_3166_1
+        paisDetectado = data.origin_country && data.origin_country.length > 0
+            ? data.origin_country[0].iso_3166_1
             : null;
         atualizarBandeiraModal(paisDetectado);
 
@@ -1282,6 +1343,8 @@ function baixarArquivo(blob, nome) {
 /************* LISTENERS DE EVENTOS *****************/
 /***************************************************/
 
+selectFiltroPais.addEventListener('change', () => carregarFilmes(true));
+
 btnNovoFilme.addEventListener('click', abrirModalNovo);
 btnCancelar.addEventListener('click', fecharModal);
 btnFecharModal.addEventListener('click', fecharModal);
@@ -1403,6 +1466,7 @@ if (togglePassword && inputPassword) {
 
 window.onload = async function () {
     await checkInitialSession();
+    await popularFiltroPaises();
     await carregarFilmes(true);
     alternarBusca('titulo');
 };
@@ -1429,56 +1493,74 @@ function atualizarBandeiraModal(countryCode) {
         container.innerHTML = '';
     }
 }
-//
-// // Função de Varredura que você vai chamar no console
-// async function atualizarPaisesNoBanco() {
-//     console.log("🚀 Iniciando varredura de países...");
-//
-//     // Busca registros que não têm a coluna 'pais' preenchida
-//     // Certifique-se de ter criado a coluna 'pais' no Supabase antes!
-//     const { data: filmesSemPais, error } = await supabaseClient
-//         .from(SUPABASE_TABLE)
-//         .select('id, tmdb')
-//         .is('pais', null);
-//
-//     if (error) {
-//         console.error("❌ Erro ao buscar filmes no Supabase:", error);
-//         return;
-//     }
-//
-//     if (!filmesSemPais || filmesSemPais.length === 0) {
-//         console.log("✅ Todos os filmes já possuem país ou não há filmes para atualizar.");
-//         return;
-//     }
-//
-//     console.log(`🔎 Encontrados ${filmesSemPais.length} filmes para atualizar.`);
-//
-//     for (const filme of filmesSemPais) {
-//         if (!filme.tmdb) continue;
-//
-//         try {
-//             const url = `https://api.themoviedb.org/3/movie/${filme.tmdb}?api_key=${TMDB_API_KEY}`;
-//             const response = await fetch(url);
-//             const movieData = await response.json();
-//
-//             if (movieData.production_countries && movieData.production_countries.length > 0) {
-//                 const countryCode = movieData.production_countries[0].iso_3166_1;
-//
-//                 const { error: updateError } = await supabaseClient
-//                     .from(SUPABASE_TABLE)
-//                     .update({ pais: countryCode })
-//                     .eq('id', filme.id);
-//
-//                 if (updateError) throw updateError;
-//                 console.log(`✅ ID ${filme.id} atualizado para: ${countryCode} ${getFlagEmoji(countryCode)}`);
-//             }
-//
-//             // Pausa de 200ms para evitar bloqueio pela API do TMDb
-//             await new Promise(r => setTimeout(r, 200));
-//
-//         } catch (err) {
-//             console.error(`⚠️ Erro ao processar ID ${filme.id}:`, err);
-//         }
-//     }
-//     console.log("🏁 Varredura concluída!");
-// }
+
+// Função de Varredura que você vai chamar no console
+async function atualizarPaisesNoBanco() {
+    console.log("🚀 Iniciando varredura completa de países...");
+
+    // 1. Busca no Supabase apenas filmes onde a coluna 'pais' ainda é nula
+    const { data: filmesSemPais, error } = await supabaseClient
+        .from(SUPABASE_TABLE)
+        .select('id, tmdb');
+
+    if (error) {
+        console.error("❌ Erro ao buscar filmes no Supabase:", error);
+        return;
+    }
+
+    if (!filmesSemPais || filmesSemPais.length === 0) {
+        console.log("✅ Todos os filmes já possuem país cadastrado.");
+        return;
+    }
+
+    console.log(`🔎 Encontrados ${filmesSemPais.length} filmes para processar.`);
+
+    for (const filme of filmesSemPais) {
+        if (!filme.tmdb) continue;
+
+        try {
+            // Consulta a API do TMDb usando o ID armazenado
+            const url = `https://api.themoviedb.org/3/movie/${filme.tmdb}?api_key=${TMDB_API_KEY}`;
+            const response = await fetch(url);
+
+            if (!response.ok) throw new Error(`Erro na API: ${response.status}`);
+
+            const movieData = await response.json();
+
+            // 2. Lógica de Captura (Prioriza origin_country, depois production_countries)
+            let countryCode = null;
+
+            // origin_country é uma array de strings: ["US"]
+            if (movieData.origin_country && movieData.origin_country.length > 0) {
+                countryCode = movieData.origin_country[0];
+            }
+            // fallback para production_countries (array de objetos)
+            else if (movieData.production_countries && movieData.production_countries.length > 0) {
+                countryCode = movieData.production_countries[0].iso_3166_1;
+            }
+
+            if (countryCode) {
+                // 3. Atualiza a coluna 'pais' no Supabase
+                const { error: updateError } = await supabaseClient
+                    .from(SUPABASE_TABLE)
+                    .update({ pais: countryCode })
+                    .eq('id', filme.id);
+
+                if (updateError) throw updateError;
+
+                // Feedback visual no console com a bandeira
+                const flag = typeof getFlagEmoji === 'function' ? getFlagEmoji(countryCode) : countryCode;
+                console.log(`✅ ID ${filme.id} (${movieData.title}) -> ${countryCode} ${flag}`);
+            } else {
+                console.warn(`⚠️ ID ${filme.id}: Nenhum país encontrado nos dados da API.`);
+            }
+
+            // Pausa técnica para evitar bloqueio por excesso de requisições (Rate Limit)
+            await new Promise(r => setTimeout(r, 250));
+
+        } catch (err) {
+            console.error(`❌ Falha no processamento do ID ${filme.id}:`, err.message);
+        }
+    }
+    console.log("🏁 Varredura concluída! Recarregue o site para ver as bandeiras nos cartazes.");
+}
